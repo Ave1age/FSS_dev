@@ -1,4 +1,4 @@
-# 局域网文件共享工具 (LAN File Sharer)
+# 文件共享系统 (File Share System)
 
 这是一个轻量级的局域网文件共享工具，旨在简化同一 WiFi 或热点下不同设备（Windows, Mac, Android, iOS）之间的文件传输。
 
