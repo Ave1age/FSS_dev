@@ -36,6 +36,46 @@
             border: 2px dashed #ccc;
             border-radius: 8px;
             text-align: center;
+            transition: border-color 0.3s, background-color 0.3s;
+        }
+        .upload-section.dragover {
+            border-color: #4caf50;
+            background-color: #e8f5e9;
+        }
+        /* Custom File Input Style */
+        .file-input-hidden {
+            width: 0.1px;
+            height: 0.1px;
+            opacity: 0;
+            overflow: hidden;
+            position: absolute;
+            z-index: -1;
+        }
+        .custom-file-label {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 300px;
+            margin: 0 auto 15px auto;
+            padding: 15px;
+            border: 2px dashed #000; /* Black dashed border */
+            border-radius: 8px;
+            background-color: rgba(128, 128, 128, 0.1); /* Gray semi-transparent */
+            color: #333;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .custom-file-label:hover {
+            background-color: rgba(128, 128, 128, 0.2);
+        }
+        .custom-file-label i {
+            margin-right: 8px;
+            font-style: normal;
         }
         .file-list {
             list-style: none;
@@ -137,11 +177,15 @@
 
         <div id="message-box" class="flash-messages"></div>
 
-        <div class="upload-section">
+        <div class="upload-section" id="drop-zone">
             <h3>📤 上传文件</h3>
+            <p id="drag-msg" style="font-size: 14px; color: #666; display: none; margin-bottom: 15px;">拖拽文件到此处上传</p>
             <form id="upload-form">
-                <input type="file" name="file" id="file-input" required>
-                <button type="submit">上传</button>
+                <input type="file" name="file" id="file-input" class="file-input-hidden" required>
+                <label for="file-input" class="custom-file-label" id="file-label">
+                    <i>📄</i> <span id="file-label-text">点击选择文件</span>
+                </label>
+                <button type="submit" style="width: 100%; max-width: 200px;">上传</button>
             </form>
             <div class="progress-container" id="progress-container">
                 <div class="progress-bar">
@@ -235,10 +279,71 @@
         // File Upload
         const uploadForm = document.getElementById('upload-form');
         const fileInput = document.getElementById('file-input');
+        const fileLabelText = document.getElementById('file-label-text');
+        const dropZone = document.getElementById('drop-zone');
+        const dragMsg = document.getElementById('drag-msg');
         const progressContainer = document.getElementById('progress-container');
         const progressFill = document.getElementById('progress-fill');
         const uploadSpeed = document.getElementById('upload-speed');
         const messageBox = document.getElementById('message-box');
+
+        // Handle File Selection Change
+        fileInput.addEventListener('change', function(e) {
+            if (this.files && this.files.length > 0) {
+                fileLabelText.textContent = this.files[0].name;
+            } else {
+                fileLabelText.textContent = '点击选择文件';
+            }
+        });
+
+        // Check if device is desktop
+        const isDesktop = !(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent));
+        if (isDesktop) {
+            dragMsg.style.display = 'block';
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+
+            function preventDefaults(e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, highlight, false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, unhighlight, false);
+            });
+
+            function highlight(e) {
+                dropZone.classList.add('dragover');
+            }
+
+            function unhighlight(e) {
+                dropZone.classList.remove('dragover');
+            }
+
+            dropZone.addEventListener('drop', handleDrop, false);
+
+            function handleDrop(e) {
+                const dt = e.dataTransfer;
+                const files = dt.files;
+
+                if (files.length > 0) {
+                    fileInput.files = files;
+                    fileLabelText.textContent = files[0].name; // Update label
+                    // Trigger submit manually
+                    const event = new Event('submit', {
+                        'bubbles': true,
+                        'cancelable': true
+                    });
+                    uploadForm.dispatchEvent(event);
+                }
+            }
+        }
 
         uploadForm.addEventListener('submit', function(e) {
             e.preventDefault();
@@ -298,6 +403,7 @@
                 if (xhr.status >= 200 && xhr.status < 300) {
                     showMessage('上传成功！', 'success');
                     fileInput.value = ''; // Clear input
+                    fileLabelText.textContent = '点击选择文件'; // Reset label
                     setTimeout(() => {
                         progressContainer.style.display = 'none';
                         progressFill.style.width = '0%';
