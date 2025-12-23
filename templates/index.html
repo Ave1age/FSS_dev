@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>局域网文件共享</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .info-box {
+            background-color: #e3f2fd;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            text-align: center;
+            border: 1px solid #bbdefb;
+        }
+        .upload-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .file-list {
+            list-style: none;
+            padding: 0;
+        }
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        .file-name {
+            font-weight: 500;
+            word-break: break-all;
+        }
+        .download-btn {
+            background-color: #4caf50;
+            color: white;
+            padding: 6px 12px;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 14px;
+            white-space: nowrap;
+            margin-left: 10px;
+        }
+        .download-btn:hover {
+            background-color: #45a049;
+        }
+        .delete-btn {
+            background-color: #f44336;
+            color: white;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-left: 5px;
+        }
+        .delete-btn:hover {
+            background-color: #d32f2f;
+        }
+        input[type="file"] {
+            margin-bottom: 10px;
+        }
+        button {
+            background-color: #008CBA;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #007399;
+        }
+        .flash-messages {
+            background-color: #dff0d8;
+            color: #3c763d;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+            list-style: none;
+            display: none; /* Hidden by default for JS handling */
+        }
+        .progress-container {
+            margin-top: 15px;
+            display: none;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #f3f3f3;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 20px;
+            background-color: #4caf50;
+            width: 0%;
+            transition: width 0.3s;
+            text-align: center;
+            line-height: 20px;
+            color: white;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>局域网文件共享</h1>
+        
+        <div class="info-box">
+            <p>本机访问地址: <strong>http://{{ ip_addr }}:{{ port }}</strong></p>
+            <p>请确保设备连接在同一 WiFi 或热点下</p>
+        </div>
+
+        <div id="message-box" class="flash-messages"></div>
+
+        <div class="upload-section">
+            <h3>📤 上传文件</h3>
+            <form id="upload-form">
+                <input type="file" name="file" id="file-input" required>
+                <button type="submit">上传</button>
+            </form>
+            <div class="progress-container" id="progress-container">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill">0%</div>
+                </div>
+                <div id="upload-speed" style="text-align: center; font-size: 12px; color: #666; margin-top: 5px;"></div>
+            </div>
+        </div>
+
+        <div class="files-section">
+            <h3>文件列表 (<span id="file-count">{{ files|length }}</span>)</h3>
+            <ul class="file-list" id="file-list">
+                <!-- File list will be populated by JS -->
+                {% for file in files %}
+                <li class="file-item">
+                    <span class="file-name">{{ file }}</span>
+                    <div>
+                        <a href="{{ url_for('download_file', filename=file) }}" class="download-btn">下载</a>
+                        <button onclick="deleteFile('{{ file }}')" class="delete-btn">删除</button>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            <p id="no-files-msg" style="text-align: center; color: #666;" {% if files %}hidden{% endif %}>暂无共享文件</p>
+        </div>
+    </div>
+
+    <script>
+        // File Polling
+        function updateFileList() {
+            fetch('/files')
+                .then(response => response.json())
+                .then(files => {
+                    const fileList = document.getElementById('file-list');
+                    const fileCount = document.getElementById('file-count');
+                    const noFilesMsg = document.getElementById('no-files-msg');
+                    
+                    fileCount.textContent = files.length;
+                    
+                    if (files.length === 0) {
+                        fileList.innerHTML = '';
+                        noFilesMsg.removeAttribute('hidden');
+                        return;
+                    }
+
+                    noFilesMsg.setAttribute('hidden', '');
+                    
+                    // Create current files set for comparison could be optimized, 
+                    // but full rebuild is safer for consistency for now
+                    let html = '';
+                    files.forEach(file => {
+                        html += `
+                        <li class="file-item">
+                            <span class="file-name">${file}</span>
+                            <div>
+                                <a href="/download/${encodeURIComponent(file)}" class="download-btn">下载</a>
+                                <button onclick="deleteFile('${file}')" class="delete-btn">删除</button>
+                            </div>
+                        </li>`;
+                    });
+                    fileList.innerHTML = html;
+                })
+                .catch(err => console.error('Error fetching files:', err));
+        }
+
+        // Poll every 3 seconds
+        setInterval(updateFileList, 3000);
+
+        // Delete File
+        function deleteFile(filename) {
+            if (confirm(`确定要删除文件 "${filename}" 吗？`)) {
+                fetch(`/delete/${encodeURIComponent(filename)}`, {
+                    method: 'POST'
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        showMessage('删除成功', 'success');
+                        updateFileList();
+                    } else {
+                        showMessage('删除失败: ' + data.error, 'error');
+                    }
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                    showMessage('删除出错', 'error');
+                });
+            }
+        }
+
+        // File Upload
+        const uploadForm = document.getElementById('upload-form');
+        const fileInput = document.getElementById('file-input');
+        const progressContainer = document.getElementById('progress-container');
+        const progressFill = document.getElementById('progress-fill');
+        const uploadSpeed = document.getElementById('upload-speed');
+        const messageBox = document.getElementById('message-box');
+
+        uploadForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const xhr = new XMLHttpRequest();
+            
+            let startTime = new Date().getTime();
+            let lastLoaded = 0;
+
+            // Progress
+            xhr.upload.addEventListener('progress', function(e) {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 100);
+                    
+                    // Calculate Speed
+                    const currentTime = new Date().getTime();
+                    const timeDiff = (currentTime - startTime) / 1000; // in seconds
+                    
+                    if (timeDiff >= 0.5) { // Update speed every 0.5s to avoid flickering
+                        const loadedDiff = e.loaded - lastLoaded;
+                        const speed = loadedDiff / timeDiff; // bytes per second
+                        
+                        let speedText = '';
+                        if (speed > 1024 * 1024) {
+                            speedText = (speed / (1024 * 1024)).toFixed(2) + ' MB/s';
+                        } else if (speed > 1024) {
+                            speedText = (speed / 1024).toFixed(2) + ' KB/s';
+                        } else {
+                            speedText = speed.toFixed(2) + ' B/s';
+                        }
+                        
+                        uploadSpeed.textContent = speedText;
+                        
+                        // Reset for next interval
+                        startTime = currentTime;
+                        lastLoaded = e.loaded;
+                    }
+
+                    progressContainer.style.display = 'block';
+                    progressFill.style.width = percent + '%';
+                    progressFill.textContent = percent + '%';
+                }
+            });
+
+            // Load
+            xhr.addEventListener('load', function() {
+                progressFill.style.width = '100%';
+                progressFill.textContent = '100%';
+                uploadSpeed.textContent = '完成';
+                
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    showMessage('上传成功！', 'success');
+                    fileInput.value = ''; // Clear input
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                        progressFill.style.width = '0%';
+                        uploadSpeed.textContent = '';
+                        updateFileList(); // Refresh list immediately
+                    }, 1000);
+                } else {
+                    showMessage('上传失败: ' + xhr.statusText, 'error');
+                }
+            });
+
+            // Error
+            xhr.addEventListener('error', function() {
+                showMessage('上传出错，请检查网络连接', 'error');
+            });
+
+            xhr.open('POST', '/upload', true);
+            xhr.send(formData);
+        });
+
+        function showMessage(text, type) {
+            messageBox.textContent = text;
+            messageBox.style.display = 'block';
+            messageBox.style.backgroundColor = type === 'success' ? '#dff0d8' : '#f2dede';
+            messageBox.style.color = type === 'success' ? '#3c763d' : '#a94442';
+            
+            setTimeout(() => {
+                messageBox.style.display = 'none';
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
